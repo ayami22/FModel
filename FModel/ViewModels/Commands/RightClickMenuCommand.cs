@@ -67,6 +67,7 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             "Save_Properties" => (EAction.Export, EShowAssetType.None, EBulkType.Properties),
             "Save_Textures" => (EAction.Export, EShowAssetType.None, EBulkType.Textures),
             "Save_Models" => (EAction.Export, EShowAssetType.None, EBulkType.Meshes),
+            "Save_AnimatedModels" => (EAction.Export, EShowAssetType.None, EBulkType.Meshes),
             "Save_Worlds" => (EAction.Export, EShowAssetType.None, EBulkType.Worlds),
             "Save_Animations" => (EAction.Export, EShowAssetType.None, EBulkType.Animations),
             "Save_Audio" => (EAction.Export, EShowAssetType.None, EBulkType.Audio),
@@ -119,10 +120,14 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
             if (string.IsNullOrEmpty(dirType))
                 return;
 
-            Action<TreeItem> folderAction = bulktype switch
+            Action<TreeItem> folderAction = trigger switch
             {
-                EBulkType.Raw => folder => contextViewModel.CUE4Parse.ExportFolder(cancellationToken, folder),
-                _ => folder => contextViewModel.CUE4Parse.ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto),
+                "Save_AnimatedModels" => folder => contextViewModel.CUE4Parse.ExtractAnimatedModelsFolder(cancellationToken, folder),
+                _ => bulktype switch
+                {
+                    EBulkType.Raw => folder => contextViewModel.CUE4Parse.ExportFolder(cancellationToken, folder),
+                    _ => folder => contextViewModel.CUE4Parse.ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto),
+                }
             };
 
             foreach (var folder in folders)

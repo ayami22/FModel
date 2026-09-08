@@ -61,6 +61,7 @@ public class ExportOptionsViewModel : ViewModel
         set
         {
             if (!SetProperty(ref field, value)) return;
+            RaisePropertyChanged(nameof(SocketSettingsEnabled));
             RaisePropertyChanged(nameof(CompressionSettingsEnabled));
             RaisePropertyChanged(nameof(TextureFormatsEnabled));
 
@@ -103,6 +104,7 @@ public class ExportOptionsViewModel : ViewModel
         get;
         set => SetProperty(ref field, value);
     }
+    public bool SocketSettingsEnabled => SelectedMeshFormat == EMeshFormat.ActorX;
 
     public IEnumerable<EFileCompressionFormat> CompressionFormats { get; } = Enum.GetValues<EFileCompressionFormat>();
     public EFileCompressionFormat SelectedCompressionFormat
@@ -166,6 +168,32 @@ public class ExportOptionsViewModel : ViewModel
         set => SetProperty(ref field, value);
     }
 
+    public IEnumerable<EExportFolderMode> ExportFolderModes { get; } = Enum.GetValues<EExportFolderMode>();
+    public EExportFolderMode SelectedExportFolderMode
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public bool SaveEmbeddedAnimations
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public IEnumerable<EAnimationExportMode> AnimationExportModes { get; } = Enum.GetValues<EAnimationExportMode>();
+    public EAnimationExportMode SelectedAnimationExportMode
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public bool FilterAnimMontage
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
     public ExportOptionsViewModel(bool showExportImmediatelyOption = false)
     {
         ShowExportImmediatelyOption = showExportImmediatelyOption;
@@ -189,6 +217,10 @@ public class ExportOptionsViewModel : ViewModel
         TextureQuality = UserSettings.Default.TextureQuality;
         ExportAllTextureMips = UserSettings.Default.ExportAllTextureMips;
         ExportImmediately = UserSettings.Default.ExportImmediately;
+        SelectedExportFolderMode = UserSettings.Default.ExportFolderMode;
+        SaveEmbeddedAnimations = UserSettings.Default.SaveEmbeddedAnimations;
+        SelectedAnimationExportMode = UserSettings.Default.AnimationExportMode;
+        FilterAnimMontage = UserSettings.Default.FilterAnimMontage;
 
         OverrideOptions = false;
         FeedbackMessage = "Reset to defaults";
@@ -211,6 +243,10 @@ public class ExportOptionsViewModel : ViewModel
         UserSettings.Default.TextureQuality = TextureQuality;
         UserSettings.Default.ExportAllTextureMips = ExportAllTextureMips;
         UserSettings.Default.ExportImmediately = ExportImmediately;
+        UserSettings.Default.ExportFolderMode = SelectedExportFolderMode;
+        UserSettings.Default.SaveEmbeddedAnimations = SaveEmbeddedAnimations;
+        UserSettings.Default.AnimationExportMode = SelectedAnimationExportMode;
+        UserSettings.Default.FilterAnimMontage = FilterAnimMontage;
         UserSettings.Save();
 
         OverrideOptions = false;
@@ -230,6 +266,10 @@ public class ExportOptionsViewModel : ViewModel
         ExportMaterials,
         ExportMorphTargets,
         SelectedSocketFormat,
-        SelectedCompressionFormat
+        SelectedCompressionFormat,
+        SelectedExportFolderMode,
+        SaveEmbeddedAnimations,
+        SelectedAnimationExportMode,
+        FilterAnimMontage
     );
 }

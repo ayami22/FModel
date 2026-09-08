@@ -31,7 +31,6 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
@@ -125,10 +124,12 @@
             </ComboBox.ItemTemplate>
         </ComboBox>
 
-        <TextBlock Grid.Row="6" Grid.Column="0" Text="Socket Format" VerticalAlignment="Center" Margin="0 0 0 5" />
+        <TextBlock Grid.Row="6" Grid.Column="0" Text="Socket Format" VerticalAlignment="Center" Margin="0 0 0 5"
+                   IsEnabled="{Binding SocketSettingsEnabled}" />
         <ComboBox Grid.Row="6" Grid.Column="2" Grid.ColumnSpan="3" Margin="0 0 0 5"
                   ItemsSource="{Binding SocketFormats}"
-                  SelectedItem="{Binding SelectedSocketFormat, Mode=TwoWay}">
+                  SelectedItem="{Binding SelectedSocketFormat, Mode=TwoWay}"
+                  IsEnabled="{Binding SocketSettingsEnabled}">
             <ComboBox.ItemTemplate>
                 <DataTemplate>
                     <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
@@ -274,6 +275,50 @@
                   IsChecked="{Binding ExportMorphTargets, Mode=TwoWay}"
                   Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
                   Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+        <Separator Grid.Row="20" Grid.Column="0" Grid.ColumnSpan="5" Style="{StaticResource CustomSeparator}" Tag="GROUPING &amp; ANIMATION" Margin="0 10 0 10" />
+
+        <TextBlock Grid.Row="21" Grid.Column="0" Text="Export Folder Mode" VerticalAlignment="Center" Margin="0 0 0 5"
+                   ToolTip="Select how models and animations should be organized when exporting" />
+        <ComboBox Grid.Row="21" Grid.Column="2" Grid.ColumnSpan="3" Margin="0 0 0 5"
+                  ItemsSource="{Binding ExportFolderModes}"
+                  SelectedItem="{Binding SelectedExportFolderMode, Mode=TwoWay}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <TextBlock Grid.Row="22" Grid.Column="0" Text="Save Animations Embedded within Meshes" VerticalAlignment="Center" Margin="0 0 0 5"
+                   ToolTip="When enabled, animations using the same skeleton as the mesh will be exported together" />
+        <CheckBox Grid.Row="22" Grid.Column="2" Grid.ColumnSpan="3" Margin="0 0 0 5"
+                  IsChecked="{Binding SaveEmbeddedAnimations, Mode=TwoWay}"
+                  Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                  Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
+
+        <TextBlock Grid.Row="23" Grid.Column="0" Text="Animation Export Mode" VerticalAlignment="Center" Margin="0 0 0 5"
+                   ToolTip="Choose how animations are exported: Through Mesh (by model's skeleton) or Through Folder (all animations in folder)"
+                   IsEnabled="{Binding SaveEmbeddedAnimations}" />
+        <ComboBox Grid.Row="23" Grid.Column="2" Grid.ColumnSpan="3" Margin="0 0 0 5"
+                  ItemsSource="{Binding AnimationExportModes}"
+                  SelectedItem="{Binding SelectedAnimationExportMode, Mode=TwoWay}"
+                  IsEnabled="{Binding SaveEmbeddedAnimations}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Converter={x:Static converters:EnumToStringConverter.Instance}}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <TextBlock Grid.Row="24" Grid.Column="0" Text="Filter AnimMontage" VerticalAlignment="Center"
+                   ToolTip="When enabled, AnimMontage animations will be filtered out and not exported"
+                   IsEnabled="{Binding SaveEmbeddedAnimations}" />
+        <CheckBox Grid.Row="24" Grid.Column="2" Grid.ColumnSpan="3"
+                  IsChecked="{Binding FilterAnimMontage, Mode=TwoWay}"
+                  Content="{Binding IsChecked, RelativeSource={RelativeSource Self}, Converter={x:Static converters:BoolToToggleConverter.Instance}}"
+                  Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}"
+                  IsEnabled="{Binding SaveEmbeddedAnimations}" />
     </Grid>
 </UserControl>
 

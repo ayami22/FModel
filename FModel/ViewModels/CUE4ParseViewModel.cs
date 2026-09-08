@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using AdonisUI.Controls;
 using CUE4Parse_Conversion.Exporters;
+using CUE4Parse_Conversion.Options;
 using CUE4Parse_Conversion.Sounds;
 using CUE4Parse;
 using CUE4Parse.Compression;
@@ -657,7 +658,191 @@ public class CUE4ParseViewModel : ViewModel
     }
 
     public void ExtractFolder(CancellationToken cancellationToken, TreeItem folder, EBulkType bulk)
-        => BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, bulk));
+    {
+        BulkFolder(cancellationToken, folder, asset => Extract(cancellationToken, asset, TabControl.HasNoTabs, bulk));
+
+        // "Through Folder" animation export: after queuing the folder's meshes,
+        // collect every animation in this folder tree and group it by skeleton
+        var options = UserSettings.GetExportOptions();
+        if (HasFlag(bulk, EBulkType.Meshes) &&
+            options.ExportFolderMode == EExportFolderMode.BySkeleton &&
+            options.AnimationExportMode == EAnimationExportMode.ThroughFolder &&
+            options.ExportAnimations)
+        {
+            CollectAnimationsThroughFolder(cancellationToken, folder);
+        }
+    }
+
+    /// <summary>
+    /// "Through Folder" animation export: recursively scans the folder tree for animations and queues them,
+    /// grouped under Have_Skeleton/&lt;SkeletonName&gt;/Animations based on each animation's own skeleton.
+    /// </summary>
+    private void CollectAnimationsThroughFolder(CancellationToken cancellationToken, TreeItem folder)
+    {
+        foreach (var entry in folder.AssetsList.Assets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var asset = entry.Asset;
+                if (!asset.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!Provider.TryLoadPackage(asset, out var package))
+                    continue;
+
+                for (var i = 0; i < package.ExportMapLength; i++)
+                {
+                    try
+                    {
+                        var pointer = new FPackageIndex(package, i + 1).ResolvedObject;
+                        if (pointer?.Object == null) continue;
+
+                        var exportTypeName = pointer.Class?.Object?.Value?.Name;
+                        if (exportTypeName == null ||
+                            !(exportTypeName.Contains("AnimSequence") ||
+                              exportTypeName.Contains("AnimMontage") ||
+                              exportTypeName.Contains("AnimComposite")))
+                            continue;
+
+                        if (UserSettings.Default.FilterAnimMontage && exportTypeName.Contains("AnimMontage"))
+                        {
+                            Log.Debug("[Through Folder] Filtered AnimMontage '{Name}'", pointer.Name);
+                            continue;
+                        }
+
+                        if (new FPackageIndex(package, i + 1).Load() is not UAnimationAsset anim)
+                            continue;
+                        if (anim.Skeleton == null || !anim.Skeleton.TryLoad<USkeleton>(out var skeleton))
+                            continue;
+
+                        var animExporter = new AnimationExporter(anim)
+                        {
+                            OutputFolderOverride = GroupedExportHelper.GetSkeletonAnimationsFolder(skeleton)
+                        };
+                        ExportSessionViewModel.Instance.Session.Add(animExporter);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // ignore individual export failures
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        foreach (var f in folder.Folders) CollectAnimationsThroughFolder(cancellationToken, f);
+    }
+
+    /// <summary>
+    /// "Animated Models Only" export: only exports skeletal models that have at least one animation bound
+    /// to their skeleton. When "Save Animations Embedded within Meshes" is enabled, each exported model
+    /// additionally brings along its matching animations (through-mesh binding).
+    /// </summary>
+    public void ExtractAnimatedModelsFolder(CancellationToken cancellationToken, TreeItem folder)
+    {
+        var animatedSkeletons = GetAnimatedSkeletonPaths(cancellationToken);
+        CollectAnimatedModels(cancellationToken, folder, animatedSkeletons);
+    }
+
+    /// <summary>Scans the provider once and returns every skeleton path that owns at least one animation.</summary>
+    private HashSet<string> GetAnimatedSkeletonPaths(CancellationToken cancellationToken)
+    {
+        var animated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var gameFile in Provider.Files.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (gameFile == null || !gameFile.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)) continue;
+
+            try
+            {
+                if (!Provider.TryLoadPackage(gameFile, out var package)) continue;
+
+                for (var i = 0; i < package.ExportMapLength; i++)
+                {
+                    try
+                    {
+                        var export = new FPackageIndex(package, i + 1).Load();
+                        if (export is not UAnimationAsset anim) continue;
+                        if (anim.Skeleton != null && anim.Skeleton.TryLoad<USkeleton>(out var skeleton))
+                        {
+                            animated.Add(skeleton.GetPathName());
+                        }
+                    }
+                    catch
+                    {
+                        // ignore individual export failures
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+        return animated;
+    }
+
+    private void CollectAnimatedModels(CancellationToken cancellationToken, TreeItem folder, HashSet<string> animatedSkeletons)
+    {
+        foreach (var entry in folder.AssetsList.Assets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var asset = entry.Asset;
+                if (!asset.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!Provider.TryLoadPackage(asset, out var package))
+                    continue;
+
+                for (var i = 0; i < package.ExportMapLength; i++)
+                {
+                    try
+                    {
+                        var pointer = new FPackageIndex(package, i + 1).ResolvedObject;
+                        if (pointer?.Object?.Value is not USkinnedAsset skinned) continue;
+                        if (!skinned.Skeleton.TryLoad<USkeleton>(out var skeleton)) continue;
+                        if (!animatedSkeletons.Contains(skeleton.GetPathName())) continue;
+
+                        SaveExport(skinned);
+                    }
+                    catch
+                    {
+                        // ignore individual export failures
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        foreach (var f in folder.Folders) CollectAnimatedModels(cancellationToken, f, animatedSkeletons);
+    }
 
     public void Extract(CancellationToken cancellationToken, GameFile entry, bool addNewTab = false, EBulkType bulk = EBulkType.None)
     {
@@ -1787,6 +1972,14 @@ public class CUE4ParseViewModel : ViewModel
 
     private void SaveExport(UObject export)
     {
+        if (UserSettings.Default.FilterAnimMontage && export is UAnimMontage)
+        {
+            Log.Information("[Save Export] Filtered AnimMontage '{Name}'", export.Name);
+            FLogger.Append(ELog.Information, () =>
+                FLogger.Text($"Filtered AnimMontage: '{export.Name}' (skipped)", Constants.WHITE, true));
+            return;
+        }
+
         try
         {
             ExportSessionViewModel.Instance.Session.Add(export);

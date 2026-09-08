@@ -69,7 +69,11 @@ public sealed class UserSettings : ViewModel
             Default.SaveEmbeddedMaterials,
             Default.SaveMorphTargets,
             Default.SocketExportFormat,
-            Default.CompressionFormat
+            Default.CompressionFormat,
+            Default.ExportFolderMode,
+            Default.SaveEmbeddedAnimations,
+            Default.AnimationExportMode,
+            Default.FilterAnimMontage
         );
     }
 
@@ -675,5 +679,33 @@ public sealed class UserSettings : ViewModel
     {
         get => _exportImmediately;
         set => SetProperty(ref _exportImmediately, value);
+    }
+
+    private EExportFolderMode _exportFolderMode = EExportFolderMode.None;
+    public EExportFolderMode ExportFolderMode
+    {
+        get => _exportFolderMode;
+        set => SetProperty(ref _exportFolderMode, value);
+    }
+
+    private bool _saveEmbeddedAnimations = false;
+    public bool SaveEmbeddedAnimations
+    {
+        get => _saveEmbeddedAnimations;
+        set => SetProperty(ref _saveEmbeddedAnimations, value);
+    }
+
+    private EAnimationExportMode _animationExportMode = EAnimationExportMode.ThroughMesh;
+    public EAnimationExportMode AnimationExportMode
+    {
+        get => _animationExportMode;
+        set => SetProperty(ref _animationExportMode, value);
+    }
+
+    private bool _filterAnimMontage = false;
+    public bool FilterAnimMontage
+    {
+        get => _filterAnimMontage;
+        set => SetProperty(ref _filterAnimMontage, value);
     }
 }
