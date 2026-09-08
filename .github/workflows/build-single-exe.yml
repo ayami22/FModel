@@ -1,0 +1,34 @@
+name: FModel Single Exe Builder
+
+on:
+  push:
+    branches: [ dev ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: GIT Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: 'recursive'
+
+      - name: .NET 10 Setup
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: .NET Restore
+        run: dotnet restore "./FModel/FModel.slnx" -r win-x64
+
+      - name: .NET Publish (single exe)
+        run: dotnet publish "./FModel/FModel.csproj" -c Release --no-restore --no-self-contained -r win-x64 -f net10.0-windows -o "./FModel/bin/Publish/" -p:PublishReadyToRun=false -p:PublishSingleFile=true -p:DebugType=None -p:GenerateDocumentationFile=false -p:DebugSymbols=false
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FModel-win-x64
+          path: ./FModel/bin/Publish/FModel.exe
+          if-no-files-found: error
