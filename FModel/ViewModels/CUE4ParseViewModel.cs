@@ -32,7 +32,7 @@ using CUE4Parse.GameTypes.HonorOfKings.FileProvider;
 using CUE4Parse.GameTypes.KRD.Assets.Exports;
 using CUE4Parse.GameTypes.LegoBatman.Assets;
 using CUE4Parse.GameTypes.LordOfMysteries.FileProvider;
-using CUE4Parse.GameTypes.RocoKingdomWorld.Assets.Objects;
+using CUE4Parse.GameTypes.Tencent.RocoKingdomWorld.Assets.Objects;
 using CUE4Parse.GameTypes.SMG.UE4.Assets.Exports.Wwise;
 using CUE4Parse.GameTypes.SquareEnix.UE4.Assets.Exports;
 using CUE4Parse.GameTypes.Theia.FileProvider;
@@ -44,7 +44,7 @@ using CUE4Parse.UE4.AssetRegistry;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Exports.Animation;
-using CUE4Parse.UE4.Assets.Exports.CriWare;
+using CUE4Parse.UE4.Assets.Exports.Criware;
 using CUE4Parse.UE4.Assets.Exports.Engine;
 using CUE4Parse.UE4.Assets.Exports.Fmod;
 using CUE4Parse.UE4.Assets.Exports.GeometryCollection;
@@ -56,8 +56,8 @@ using CUE4Parse.UE4.Assets.Exports.Verse;
 using CUE4Parse.UE4.Assets.Exports.Wwise;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.BinaryConfig;
-using CUE4Parse.UE4.CriWare;
-using CUE4Parse.UE4.CriWare.Readers;
+using CUE4Parse.UE4.Criware;
+using CUE4Parse.UE4.Criware.Readers;
 using CUE4Parse.UE4.FMod;
 using CUE4Parse.UE4.GameFeatures;
 using CUE4Parse.UE4.IO;
@@ -396,7 +396,7 @@ public class CUE4ParseViewModel : ViewModel
     {
         if (Provider == null) return;
 
-        AssetsFolder.Folders.Clear();
+        AssetsFolder.Clear();
         SearchVm.SearchResults.Clear();
         Helper.CloseWindow<AdonisWindow>("Search For Packages");
         Provider.UnloadNonStreamedVfs();
