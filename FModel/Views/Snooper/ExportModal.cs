@@ -64,7 +64,13 @@ public sealed class ExportModal
 
     private ExportModal()
     {
-        ImGuiSink.Instance.OnExporterLogEvent += _pendingLogs.Enqueue;
+        ImGuiSink.Instance.OnExporterLogEvent += log =>
+        {
+            // The singleton also receives folder exports while its window is closed.
+            if (!_inProgress) return;
+            _pendingLogs.Enqueue(log);
+            while (_pendingLogs.Count > 1000) _pendingLogs.TryDequeue(out _);
+        };
         _progress = new Progress<ExportProgress>(p => _currentProgress = p);
     }
 

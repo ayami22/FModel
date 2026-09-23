@@ -78,97 +78,114 @@ public class RightClickMenuCommand : ViewModelCommand<ApplicationViewModel>
 
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.ExportedCount, 0);
         Interlocked.Exchange(ref contextViewModel.CUE4Parse.FailedExportCount, 0);
-        await _threadWorkerView.Begin(cancellationToken =>
+        var streaming = action == EAction.Export && bulktype is EBulkType.Meshes or EBulkType.Worlds or EBulkType.Animations;
+        if (streaming && ExportSessionViewModel.Instance.IsRunning)
         {
-            if (action is EAction.Show)
-            {
-                if (showtype is EShowAssetType.References)
-                    assets = [assets.FirstOrDefault()];
+            _threadWorkerView.SignalOperationInProgress();
+            return;
+        }
+        await _threadWorkerView.Begin(workerToken =>
+        {
+            if (streaming)
+                ExportSessionViewModel.Instance.ExportWhileScanningAsync(Scan, workerToken).GetAwaiter().GetResult();
+            else
+                Scan(workerToken);
 
-                Action<GameFile> entryAction = showtype switch
+            void Scan(CancellationToken cancellationToken)
+            {
+                if (action is EAction.Show)
                 {
-                    EShowAssetType.JSON => entry => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, true),
-                    EShowAssetType.Metadata => entry => contextViewModel.CUE4Parse.ShowMetadata(entry),
-                    EShowAssetType.Decompile => entry => contextViewModel.CUE4Parse.Decompile(entry),
-                    EShowAssetType.References => entry => contextViewModel.CUE4Parse.FindReferences(entry),
-                    _ => throw new ArgumentOutOfRangeException("Unsupported asset action type."),
+                    if (showtype is EShowAssetType.References)
+                        assets = [assets.FirstOrDefault()];
+
+                    Action<GameFile> entryAction = showtype switch
+                    {
+                        EShowAssetType.JSON => entry => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, true),
+                        EShowAssetType.Metadata => entry => contextViewModel.CUE4Parse.ShowMetadata(entry),
+                        EShowAssetType.Decompile => entry => contextViewModel.CUE4Parse.Decompile(entry),
+                        EShowAssetType.References => entry => contextViewModel.CUE4Parse.FindReferences(entry),
+                        _ => throw new ArgumentOutOfRangeException("Unsupported asset action type."),
+                    };
+
+                    foreach (var entry in assets)
+                    {
+                        Thread.Yield();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        entryAction(entry);
+                    }
+
+                    return;
+                }
+
+                var (dirType, filetype) = bulktype switch
+                {
+                    EBulkType.Raw => (UserSettings.Default.RawDataDirectory, "files"),
+                    EBulkType.Properties => (UserSettings.Default.PropertiesDirectory, "json files"),
+                    EBulkType.Textures => (UserSettings.Default.TextureDirectory, "textures"),
+                    EBulkType.Meshes => (UserSettings.Default.ModelDirectory, "models"),
+                    EBulkType.Worlds => (UserSettings.Default.ModelDirectory, "worlds"),
+                    EBulkType.Animations => (UserSettings.Default.ModelDirectory, "animations"),
+                    EBulkType.Audio => (UserSettings.Default.AudioDirectory, "audio files"),
+                    EBulkType.Code => (UserSettings.Default.CodeDirectory, "code files"),
+                    _ => (null, null),
                 };
 
-                foreach (var entry in assets)
+                if (streaming) dirType = ExportSessionViewModel.Instance.Options.OverrideOptions
+                    ? ExportSessionViewModel.Instance.Options.OutputDirectory : UserSettings.Default.ModelDirectory;
+
+                if (string.IsNullOrEmpty(dirType))
+                    return;
+
+                Action<TreeItem> folderAction = trigger switch
                 {
-                    Thread.Yield();
+                    "Save_AnimatedModels" => folder => contextViewModel.CUE4Parse.ExtractAnimatedModelsFolder(cancellationToken, folder),
+                    _ => bulktype switch
+                    {
+                        EBulkType.Raw => folder => contextViewModel.CUE4Parse.ExportFolder(cancellationToken, folder),
+                        _ => folder => contextViewModel.CUE4Parse.ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto),
+                    }
+                };
+
+                foreach (var folder in folders)
+                {
                     cancellationToken.ThrowIfCancellationRequested();
-                    entryAction(entry);
+                    var queuedBefore = ExportSessionViewModel.Instance.Session.TotalQueued;
+                    folderAction(folder);
+
+                    var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.PathAtThisPoint.SubstringAfterLast('/')).Replace('\\', '/');
+                    if (!streaming) LogExport(contextViewModel, folder.PathAtThisPoint, path, dirType, filetype, queuedBefore);
                 }
 
-                return;
-            }
-
-            var (dirType, filetype) = bulktype switch
-            {
-                EBulkType.Raw => (UserSettings.Default.RawDataDirectory, "files"),
-                EBulkType.Properties => (UserSettings.Default.PropertiesDirectory, "json files"),
-                EBulkType.Textures => (UserSettings.Default.TextureDirectory, "textures"),
-                EBulkType.Meshes => (UserSettings.Default.ModelDirectory, "models"),
-                EBulkType.Worlds => (UserSettings.Default.ModelDirectory, "worlds"),
-                EBulkType.Animations => (UserSettings.Default.ModelDirectory, "animations"),
-                EBulkType.Audio => (UserSettings.Default.AudioDirectory, "audio files"),
-                EBulkType.Code => (UserSettings.Default.CodeDirectory, "code files"),
-                _ => (null, null),
-            };
-
-            if (string.IsNullOrEmpty(dirType))
-                return;
-
-            Action<TreeItem> folderAction = trigger switch
-            {
-                "Save_AnimatedModels" => folder => contextViewModel.CUE4Parse.ExtractAnimatedModelsFolder(cancellationToken, folder),
-                _ => bulktype switch
+                Action<GameFile, EBulkType> fileAction = bulktype switch
                 {
-                    EBulkType.Raw => folder => contextViewModel.CUE4Parse.ExportFolder(cancellationToken, folder),
-                    _ => folder => contextViewModel.CUE4Parse.ExtractFolder(cancellationToken, folder, bulktype | EBulkType.Auto),
-                }
-            };
+                    EBulkType.Raw => (entry, _) => contextViewModel.CUE4Parse.ExportData(entry),
+                    _ => (entry, bulk) => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, false, bulk),
+                };
 
-            foreach (var folder in folders)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var queuedBefore = ExportSessionViewModel.Instance.Session.TotalQueued;
-                folderAction(folder);
-
-                var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? folder.PathAtThisPoint : folder.PathAtThisPoint.SubstringAfterLast('/')).Replace('\\', '/');
-                LogExport(contextViewModel, folder.PathAtThisPoint, path, dirType, filetype, queuedBefore);
-            }
-
-            Action<GameFile, EBulkType> fileAction = bulktype switch
-            {
-                EBulkType.Raw => (entry, _) => contextViewModel.CUE4Parse.ExportData(entry),
-                _ => (entry, bulk) => contextViewModel.CUE4Parse.Extract(cancellationToken, entry, false, bulk),
-            };
-
-            foreach (var group in assetsGroups)
-            {
-                var directory = group.Key;
-                var list = group.ToArray();
-                var update = list.Length > 1;
-                var bulk = bulktype | (update ? EBulkType.Auto : EBulkType.None);
-                var queuedBefore = ExportSessionViewModel.Instance.Session.TotalQueued;
-                foreach (var entry in list)
+                foreach (var group in assetsGroups)
                 {
-                    Thread.Yield();
-                    cancellationToken.ThrowIfCancellationRequested();
-                    fileAction(entry, bulk);
-                }
+                    var directory = group.Key;
+                    var list = group.ToArray();
+                    var update = list.Length > 1;
+                    var bulk = bulktype | (update || streaming ? EBulkType.Auto : EBulkType.None);
+                    var queuedBefore = ExportSessionViewModel.Instance.Session.TotalQueued;
+                    foreach (var entry in list)
+                    {
+                        Thread.Yield();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        fileAction(entry, bulk);
+                    }
 
-                if (update)
-                {
-                    var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? directory : directory.SubstringAfterLast('/')).Replace('\\', '/');
-                    LogExport(contextViewModel, directory, path, dirType, filetype, queuedBefore);
+                    if (update && !streaming)
+                    {
+                        var path = Path.Combine(dirType, UserSettings.Default.KeepDirectoryStructure ? directory : directory.SubstringAfterLast('/')).Replace('\\', '/');
+                        LogExport(contextViewModel, directory, path, dirType, filetype, queuedBefore);
+                    }
                 }
             }
         });
 
-        if (action is EAction.Export)
+        if (action is EAction.Export && !streaming)
         {
             await ExportSessionViewModel.Instance.ExportAutomaticallyAsync();
         }

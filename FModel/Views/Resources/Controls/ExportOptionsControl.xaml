@@ -66,7 +66,7 @@
                       Style="{DynamicResource {x:Static adonisUi:Styles.ToggleSwitch}}" />
             <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="5 0 0 0" FontSize="11"
                        Foreground="{DynamicResource {x:Static adonisUi:Brushes.DisabledForegroundBrush}}"
-                       Text="Start exporting automatically after all selected assets have been queued." />
+                       Text="Auto-start other queued exports. Models, worlds and animations always export while scanning." TextWrapping="Wrap" MaxWidth="340" />
         </Grid>
 
         <Separator Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Style="{StaticResource CustomSeparator}" Tag="MESH" Margin="0 10 0 10" />

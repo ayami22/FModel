@@ -637,9 +637,11 @@ public class CUE4ParseViewModel : ViewModel
             {
                 action(entry.Asset);
             }
-            catch
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
-                // ignore
+                if (ExportSessionViewModel.Instance.IsStreaming)
+                    ExportSessionViewModel.Instance.Session.ReportScanFailure(entry.Asset.Path, ex);
             }
         }
 
@@ -663,7 +665,7 @@ public class CUE4ParseViewModel : ViewModel
 
         // "Through Folder" animation export: after queuing the folder's meshes,
         // collect every animation in this folder tree and group it by skeleton
-        var options = UserSettings.GetExportOptions();
+        var options = ExportSessionViewModel.Instance.ActiveOptions ?? UserSettings.GetExportOptions();
         if (HasFlag(bulk, EBulkType.Meshes) &&
             options.ExportFolderMode == EExportFolderMode.BySkeleton &&
             options.AnimationExportMode == EAnimationExportMode.ThroughFolder &&
@@ -689,11 +691,11 @@ public class CUE4ParseViewModel : ViewModel
                 if (!asset.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (!Provider.TryLoadPackage(asset, out var package))
-                    continue;
+                var package = Provider.LoadPackage(asset);
 
                 for (var i = 0; i < package.ExportMapLength; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
                         var pointer = new FPackageIndex(package, i + 1).ResolvedObject;
@@ -706,7 +708,7 @@ public class CUE4ParseViewModel : ViewModel
                               exportTypeName.Contains("AnimComposite")))
                             continue;
 
-                        if (UserSettings.Default.FilterAnimMontage && exportTypeName.Contains("AnimMontage"))
+                        if ((ExportSessionViewModel.Instance.ActiveOptions?.FilterAnimMontage ?? UserSettings.Default.FilterAnimMontage) && exportTypeName.Contains("AnimMontage"))
                         {
                             Log.Debug("[Through Folder] Filtered AnimMontage '{Name}'", pointer.Name);
                             continue;
@@ -723,23 +725,19 @@ public class CUE4ParseViewModel : ViewModel
                         };
                         ExportSessionViewModel.Instance.Session.Add(animExporter);
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
                     {
-                        throw;
-                    }
-                    catch
-                    {
-                        // ignore individual export failures
+                        if (ExportSessionViewModel.Instance.IsStreaming)
+                            ExportSessionViewModel.Instance.Session.ReportScanFailure(asset.Path, ex);
                     }
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
-                throw;
-            }
-            catch
-            {
-                // ignore
+                if (ExportSessionViewModel.Instance.IsStreaming)
+                    ExportSessionViewModel.Instance.Session.ReportScanFailure(entry.Asset.Path, ex);
             }
         }
 
@@ -753,53 +751,11 @@ public class CUE4ParseViewModel : ViewModel
     /// </summary>
     public void ExtractAnimatedModelsFolder(CancellationToken cancellationToken, TreeItem folder)
     {
-        var animatedSkeletons = GetAnimatedSkeletonPaths(cancellationToken);
-        CollectAnimatedModels(cancellationToken, folder, animatedSkeletons);
+        var index = ExportSessionViewModel.Instance.Session.GetAnimationIndex(Provider, cancellationToken);
+        CollectAnimatedModels(cancellationToken, folder, index);
     }
 
-    /// <summary>Scans the provider once and returns every skeleton path that owns at least one animation.</summary>
-    private HashSet<string> GetAnimatedSkeletonPaths(CancellationToken cancellationToken)
-    {
-        var animated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var gameFile in Provider.Files.Values)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (gameFile == null || !gameFile.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)) continue;
-
-            try
-            {
-                if (!Provider.TryLoadPackage(gameFile, out var package)) continue;
-
-                for (var i = 0; i < package.ExportMapLength; i++)
-                {
-                    try
-                    {
-                        var export = new FPackageIndex(package, i + 1).Load();
-                        if (export is not UAnimationAsset anim) continue;
-                        if (anim.Skeleton != null && anim.Skeleton.TryLoad<USkeleton>(out var skeleton))
-                        {
-                            animated.Add(skeleton.GetPathName());
-                        }
-                    }
-                    catch
-                    {
-                        // ignore individual export failures
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-        return animated;
-    }
-
-    private void CollectAnimatedModels(CancellationToken cancellationToken, TreeItem folder, HashSet<string> animatedSkeletons)
+    private void CollectAnimatedModels(CancellationToken cancellationToken, TreeItem folder, CUE4Parse_Conversion.AnimationExportIndex animatedSkeletons)
     {
         foreach (var entry in folder.AssetsList.Assets)
         {
@@ -811,33 +767,35 @@ public class CUE4ParseViewModel : ViewModel
                 if (!asset.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (!Provider.TryLoadPackage(asset, out var package))
-                    continue;
+                var package = Provider.LoadPackage(asset);
 
                 for (var i = 0; i < package.ExportMapLength; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
                         var pointer = new FPackageIndex(package, i + 1).ResolvedObject;
-                        if (pointer?.Object?.Value is not USkinnedAsset skinned) continue;
+                        if (pointer == null || package is not AbstractUePackage uePackage ||
+                            uePackage.ConstructObject(pointer.Class, package) is not USkinnedAsset) continue;
+                        if (pointer.Object?.Value is not USkinnedAsset skinned) continue;
                         if (!skinned.Skeleton.TryLoad<USkeleton>(out var skeleton)) continue;
-                        if (!animatedSkeletons.Contains(skeleton.GetPathName())) continue;
+                        if (!animatedSkeletons.Contains(skeleton.GetPathName(), ExportSessionViewModel.Instance.ActiveOptions?.FilterAnimMontage ?? UserSettings.Default.FilterAnimMontage)) continue;
 
                         SaveExport(skinned);
                     }
-                    catch
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
                     {
-                        // ignore individual export failures
+                        if (ExportSessionViewModel.Instance.IsStreaming)
+                            ExportSessionViewModel.Instance.Session.ReportScanFailure(asset.Path, ex);
                     }
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
             {
-                throw;
-            }
-            catch
-            {
-                // ignore
+                if (ExportSessionViewModel.Instance.IsStreaming)
+                    ExportSessionViewModel.Instance.Session.ReportScanFailure(entry.Asset.Path, ex);
             }
         }
 
@@ -846,6 +804,20 @@ public class CUE4ParseViewModel : ViewModel
 
     public void Extract(CancellationToken cancellationToken, GameFile entry, bool addNewTab = false, EBulkType bulk = EBulkType.None)
     {
+        if (ExportSessionViewModel.Instance.IsStreaming)
+        {
+            if (!entry.IsUePackage) return;
+            var package = Provider.LoadPackage(entry);
+            for (var i = 0; i < package.ExportMapLength; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try { CheckExport(cancellationToken, package, i, bulk | EBulkType.Auto); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { ExportSessionViewModel.Instance.Session.ReportScanFailure(entry.Path, ex); }
+            }
+            return;
+        }
+
         ApplicationService.ApplicationView.IsAssetsExplorerVisible = false;
         Log.Information("User DOUBLE-CLICKED to extract '{FullPath}'", entry.Path);
 
@@ -1972,7 +1944,7 @@ public class CUE4ParseViewModel : ViewModel
 
     private void SaveExport(UObject export)
     {
-        if (UserSettings.Default.FilterAnimMontage && export is UAnimMontage)
+        if ((ExportSessionViewModel.Instance.ActiveOptions?.FilterAnimMontage ?? UserSettings.Default.FilterAnimMontage) && export is UAnimMontage)
         {
             Log.Information("[Save Export] Filtered AnimMontage '{Name}'", export.Name);
             FLogger.Append(ELog.Information, () =>
@@ -1984,9 +1956,12 @@ public class CUE4ParseViewModel : ViewModel
         {
             ExportSessionViewModel.Instance.Session.Add(export);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception e)
         {
-            Log.Error(e, "Could not add to export session");
+            if (ExportSessionViewModel.Instance.IsStreaming)
+                ExportSessionViewModel.Instance.Session.ReportScanFailure(export.GetPathName(), e);
+            else Log.Error(e, "Could not add to export session");
         }
     }
 
@@ -1996,6 +1971,7 @@ public class CUE4ParseViewModel : ViewModel
         {
             ExportSessionViewModel.Instance.Session.Add(new RawDataExporter(entry, Provider));
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception e)
         {
             Log.Error(e, "Could not add to export session");
