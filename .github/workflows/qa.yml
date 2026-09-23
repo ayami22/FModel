@@ -1,5 +1,8 @@
 name: FModel QA Builder
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ dev ]

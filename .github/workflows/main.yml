@@ -1,48 +1,64 @@
-name: FModel Builder
+name: FModel Release Builder
 
 on:
   workflow_dispatch:
     inputs:
-        appVersion:
-          description: 'FModel Version And Release Tag'
-          required: true
-          default: '4.0.X.X'
+      appVersion:
+        description: 'Release version (matching docs/releases/vVERSION.md)'
+        required: true
+        default: '4.4.5'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      APP_VERSION: ${{ inputs.appVersion }}
 
     steps:
-      - name: GIT Checkout
+      - name: Checkout
         uses: actions/checkout@v6
         with:
-          submodules: 'true'
+          submodules: recursive
 
-      - name: Fetch Submodules Recursively
-        run: git submodule update --init --recursive
+      - name: Validate release version and notes
+        shell: pwsh
+        run: |
+          if ($env:APP_VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'Use a three-part version, for example 4.4.5.'
+          }
+          if (!(Test-Path -LiteralPath "docs/releases/v$env:APP_VERSION.md")) {
+            throw 'Commit release notes before publishing.'
+          }
 
-      - name: .NET 10 Setup
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      - name: .NET Restore
-        run: dotnet restore FModel
+      - name: Restore
+        run: dotnet restore FModel/FModel.slnx -r win-x64
 
-      - name: .NET Publish
-        run: dotnet publish FModel -c Release --no-self-contained -r win-x64 -f net8.0-windows -o "./FModel/bin/Publish/" -p:PublishReadyToRun=false -p:PublishSingleFile=true -p:DebugType=None -p:GenerateDocumentationFile=false -p:DebugSymbols=false -p:AssemblyVersion=${{ github.event.inputs.appVersion }} -p:FileVersion=${{ github.event.inputs.appVersion }}
+      - name: Publish
+        run: dotnet publish FModel/FModel.csproj -c Release --no-restore --no-self-contained -r win-x64 -f net10.0-windows -o FModel/bin/Publish -p:PublishReadyToRun=false -p:PublishSingleFile=true -p:DebugType=None -p:GenerateDocumentationFile=false -p:DebugSymbols=false "-p:Version=$env:APP_VERSION" "-p:AssemblyVersion=$env:APP_VERSION" "-p:FileVersion=$env:APP_VERSION"
 
-      - name: ZIP File
-        uses: papeloto/action-zip@v1.2
+      - name: Package and checksum
+        shell: pwsh
+        run: |
+          Compress-Archive -LiteralPath FModel/bin/Publish/FModel.exe -DestinationPath FModel-win-x64.zip
+          $hash = (Get-FileHash -LiteralPath FModel-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  FModel-win-x64.zip" | Set-Content -LiteralPath SHA256SUMS.txt -Encoding ascii
+
+      - name: Publish release
+        uses: ncipollo/release-action@v1.20.0
         with:
-          files: ./FModel/bin/Publish/FModel.exe
-          dest: FModel.zip # will end up in working directory not the Publish folder
-
-      - name: GIT Release
-        uses: marvinpinto/action-automatic-releases@latest
-        with:
-          title: "FModel v${{ github.event.inputs.appVersion }}"
-          automatic_release_tag: ${{ github.event.inputs.appVersion }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: v${{ inputs.appVersion }}
+          commit: ${{ github.sha }}
+          name: FModel v${{ inputs.appVersion }}
+          bodyFile: docs/releases/v${{ inputs.appVersion }}.md
+          artifacts: FModel-win-x64.zip,SHA256SUMS.txt
+          artifactErrorsFailBuild: true
           prerelease: false
-          files: FModel.zip
